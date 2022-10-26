@@ -13,6 +13,7 @@
 // limitations under the License.
 import 'package:bottom_sheet/src/flexible_bottom_sheet_header_delegate.dart';
 import 'package:bottom_sheet/src/widgets/change_insets_detector.dart';
+import 'package:bottom_sheet/src/widgets/change_size_detector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
@@ -255,7 +256,7 @@ class _FlexibleBottomSheetState extends State<FlexibleBottomSheet> {
                 cacheExtent: _calculateCacheExtent(
                   MediaQuery.of(context).viewInsets.bottom,
                 ),
-                getContentHeight:
+                onContentHeightChange:
                     !widget.isExpand ? _changeInitAndMaxHeight : null,
               ),
             ),
@@ -385,7 +386,7 @@ class _Content extends StatefulWidget {
   final double? maxHeaderHeight;
   final double currentExtent;
   final ScrollController scrollController;
-  final Function(double)? getContentHeight;
+  final Function(double)? onContentHeightChange;
   final double cacheExtent;
 
   const _Content({
@@ -398,7 +399,7 @@ class _Content extends StatefulWidget {
     this.bodyBuilder,
     this.minHeaderHeight,
     this.maxHeaderHeight,
-    this.getContentHeight,
+    this.onContentHeightChange,
     Key? key,
   }) : super(key: key);
 
@@ -409,18 +410,11 @@ class _Content extends StatefulWidget {
 class _ContentState extends State<_Content> {
   final _contentKey = GlobalKey();
 
+  double? _contentHeight;
+
   @override
   void initState() {
     super.initState();
-    if (widget.getContentHeight != null) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (timeStamp) {
-          final renderContent =
-              _contentKey.currentContext!.findRenderObject() as RenderBox;
-          widget.getContentHeight!(renderContent.size.height);
-        },
-      );
-    }
   }
 
   @override
@@ -430,12 +424,29 @@ class _ContentState extends State<_Content> {
         type: MaterialType.transparency,
         child: DecoratedBox(
           decoration: widget.decoration ?? const BoxDecoration(),
-          child: SizedBox(
-            key: _contentKey,
-            child: widget.builder!(
-              context,
-              widget.scrollController,
-              widget.currentExtent,
+          child: ChangeSizeDetector(
+            onChange: (size) {
+              final newContentHeight = size.height;
+              if (newContentHeight == _contentHeight) {
+                return;
+              }
+
+              _contentHeight = newContentHeight;
+
+              final onContentHeightChange = widget.onContentHeightChange;
+              if (onContentHeightChange == null) {
+                return;
+              }
+
+              onContentHeightChange(newContentHeight);
+            },
+            child: SizedBox(
+              key: _contentKey,
+              child: widget.builder!(
+                context,
+                widget.scrollController,
+                widget.currentExtent,
+              ),
             ),
           ),
         ),
@@ -446,28 +457,45 @@ class _ContentState extends State<_Content> {
       type: MaterialType.transparency,
       child: DecoratedBox(
         decoration: widget.decoration ?? const BoxDecoration(),
-        child: CustomScrollView(
-          cacheExtent: widget.cacheExtent,
-          key: _contentKey,
-          controller: widget.scrollController,
-          slivers: <Widget>[
-            if (widget.headerBuilder != null)
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: FlexibleBottomSheetHeaderDelegate(
-                  minHeight: widget.minHeaderHeight ?? 0.0,
-                  maxHeight: widget.maxHeaderHeight ?? 1.0,
-                  child: widget.headerBuilder!(context, widget.currentExtent),
+        child: ChangeSizeDetector(
+          onChange: (size) {
+            final newContentHeight = size.height;
+            if (newContentHeight == _contentHeight) {
+              return;
+            }
+
+            _contentHeight = newContentHeight;
+
+            final onContentHeightChange = widget.onContentHeightChange;
+            if (onContentHeightChange == null) {
+              return;
+            }
+
+            onContentHeightChange(newContentHeight);
+          },
+          child: CustomScrollView(
+            cacheExtent: widget.cacheExtent,
+            key: _contentKey,
+            controller: widget.scrollController,
+            slivers: <Widget>[
+              if (widget.headerBuilder != null)
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: FlexibleBottomSheetHeaderDelegate(
+                    minHeight: widget.minHeaderHeight ?? 0.0,
+                    maxHeight: widget.maxHeaderHeight ?? 1.0,
+                    child: widget.headerBuilder!(context, widget.currentExtent),
+                  ),
                 ),
-              ),
-            if (widget.bodyBuilder != null)
-              SliverList(
-                delegate: widget.bodyBuilder!(
-                  context,
-                  widget.currentExtent,
+              if (widget.bodyBuilder != null)
+                SliverList(
+                  delegate: widget.bodyBuilder!(
+                    context,
+                    widget.currentExtent,
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
